@@ -1,0 +1,38 @@
+﻿# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build
+bin/
+obj/
+out/
+
+# Rider
+.idea/
+
+# ASP.NET temp / publishing
+*.publishsettings
+appsettings.*.json
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userprefs
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# EF Core DB files, user secrets
+*.db
+secrets.json
+.vscode/
+
+# Others
+*.log
+*.vsidx
