@@ -26,6 +26,8 @@ namespace Crm.Webhook.Api.Controllers
         private readonly string? _hmacSecret;        
         private readonly string[] _ipWhitelist;
 
+
+
         public EvolutionWebhookController(
             ILogger<EvolutionWebhookController> log,
             IMessageQueue queue,
