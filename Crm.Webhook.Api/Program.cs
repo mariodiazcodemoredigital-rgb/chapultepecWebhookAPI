@@ -5,11 +5,24 @@ using Crm.Webhook.Core.Services.Hubs;
 using Crm.Webhook.Core.Services.Implementation.EvolutionWebHook;
 using Crm.Webhook.Core.Services.Interfaces.EvolutionWebHook;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. Captura la cadena de conexión
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+// 2. Configuración de Serilog con el Rolling File en la carpeta "Logs"
+// Esta es la carpeta que mapeamos en Easypanel hacia /root/logs_webhook
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .WriteTo.Console()
+    .WriteTo.File("Logs/webhook-audit-.txt",
+        rollingInterval: RollingInterval.Day,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
+
+builder.Host.UseSerilog();
 
 // 2. Registra el contexto con el Driver de SQL Server
 builder.Services.AddDbContextFactory<CrmInboxDbContext>(options =>

@@ -36,3 +36,7 @@ secrets.json
 # Others
 *.log
 *.vsidx
+
+# GitIgnore
+Logs/
+*.txt

@@ -605,8 +605,8 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
 
                 var settings = new
                 {
-                    rejectCall = true,
-                    msgCall = "No se aceptan llamadas por este medio, por favor escriba.",
+                    rejectCall = false,
+                    //msgCall = "No se aceptan llamadas por este medio, por favor escriba.",
                     groupsIgnore = true,
                     alwaysOnline = false,
                     readMessages = false, // Visto manual habilitado
