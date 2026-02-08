@@ -1,8 +1,11 @@
-﻿using Crm.Webhook.Core.Dtos;
+﻿using Azure;
+using Crm.Webhook.Core.Dtos;
 using Crm.Webhook.Core.Models;
 using Crm.Webhook.Core.Parsers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,14 +22,17 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
         private readonly IDbContextFactory<CrmInboxDbContext> _dbFactory;
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _cfg;
+        private readonly ILogger<CrmInboxRepository> _logger;
 
         public CrmInboxRepository(IDbContextFactory<CrmInboxDbContext> dbFactory,
                                 HttpClient httpClient,
-                                IConfiguration cfg)
+                                IConfiguration cfg,
+                                ILogger<CrmInboxRepository> logger)
         {
             _dbFactory = dbFactory;
             _httpClient = httpClient;
             _cfg = cfg;
+            _logger = logger;
         }
 
         // Usuario actual simulado (o inyectado si tienes Auth)
@@ -252,16 +258,15 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
         // 6. ENVIAR MENSAJE (AGENTE -> CLIENTE)
         // ---------------------------------------------------------
         public async Task<CrmMessage?> AppendAgentMessageAsync(string threadId, string text, string senderName, string? quotedId = null, CancellationToken ct = default)
-        {
-            Console.WriteLine($"[CRM] Nombre Sender: {senderName}");
-            Console.WriteLine($"[CRM] Iniciando envío para Thread: {threadId}");
+        {   
+            _logger.LogInformation("[CRMINBOX].[AppendAgentMessageAsync] MENSAJE | Iniciando envío de mensaje. Thread: {ThreadId}, Hacia: {Sender}", threadId, senderName);
 
             await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
             var thread = await db.CrmThreads.FirstOrDefaultAsync(t => t.ThreadId == threadId, ct);
             if (thread == null)
-            {
-                Console.WriteLine($"[CRM] Error: No se encontró el ThreadId {threadId} en la base de datos.");
+            {   
+                _logger.LogError("[CRMINBOX].[AppendAgentMessageAsync] ERROR | No se encontró el ThreadId {ThreadId} en la base de datos", threadId);
                 return null;
             }
 
@@ -273,15 +278,13 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                 var instance = _cfg["Evolution:InstanceName"];
 
                 // Log de Configuración (No imprimas el ApiKey completo por seguridad)
-                Console.WriteLine($"[CRM] Config: Url={apiUrl}, Instance={instance}, KeyPresent={!string.IsNullOrEmpty(apiKey)}");
+                //Console.WriteLine($"[CRM] Config: Url={apiUrl}, Instance={instance}, KeyPresent={!string.IsNullOrEmpty(apiKey)}");
 
                 if (string.IsNullOrEmpty(apiUrl) || string.IsNullOrEmpty(apiKey))
                 {
-                    Console.WriteLine("[CRM] Error: La configuración de Evolution (Url/Key) está incompleta.");
+                    _logger.LogError("[CRMINBOX].[AppendAgentMessageAsync] ERROR | Configuración de Evolution incompleta (Url/Key).");                                      
                     return null;
                 }
-
-
 
 
                 // 1. CONSTRUIR EL PAYLOAD DE RESPUESTA (QUOTED)
@@ -310,6 +313,7 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                                 conversation = originalMsg.Text // El texto que aparecerá en el recuadro gris de WhatsApp
                             }
                         };
+                        _logger.LogInformation("[CRMINBOX].[AppendAgentMessageAsync] PROCESO | Mensaje citado detectado: {QuotedId}", quotedId);
                     }
                 }
 
@@ -325,8 +329,8 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                     delay = 1200,
                     linkPreview = true
                 };
-
-                Console.WriteLine($"[CRM] Enviando POST a: {apiUrl}/message/sendText/{instance} para el número: {thread.CustomerPhone}");
+                
+                _logger.LogInformation("[CRMINBOX].[AppendAgentMessageAsync].[API_EVO] POST | Enviando a: {ApiUrl}/message/sendText/{Instance} | Destino: {Phone}", apiUrl, instance, thread.CustomerPhone);
 
                 var response = await _httpClient.PostAsJsonAsync($"{apiUrl}/message/sendText/{instance}", payload, ct);
 
@@ -334,15 +338,15 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync(ct);
-                    Console.WriteLine($"[CRM] ERROR API Evolution. Status: {response.StatusCode}. Detalle: {errorContent}");
+                    _logger.LogError("[CRMINBOX].[AppendAgentMessageAsync].[API_EVO] ERROR | Status: {Status}. Detalle: {Error}", response.StatusCode, errorContent);                    
                     return null;
                 }
 
-                Console.WriteLine("[CRM] Evolution aceptó el mensaje. Procesando respuesta...");
+                _logger.LogInformation("[CRMINBOX].[AppendAgentMessageAsync].[API_EVO] ÉXITO | Evolution aceptó el mensaje.");                
 
                 // LEER JSON RAW (A veces el modelo falla si Evolution cambia algo)
                 var rawJsonResponse = await response.Content.ReadAsStringAsync(ct);
-                Console.WriteLine($"[CRM] Respuesta Raw de Evolution: {rawJsonResponse}");
+                //Console.WriteLine($"[CRM] Respuesta Raw de Evolution: {rawJsonResponse}");
 
                 var evolutionResult = await response.Content.ReadFromJsonAsync<EvolutionSendResponse>(cancellationToken: ct);
 
@@ -389,14 +393,16 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                 thread.LastMessagePreview = text;
 
                 await db.SaveChangesAsync(ct);
-                Console.WriteLine($"[CRM] ¡Éxito! Mensaje guardado en DB con Id: {msg.Id}");
+
+                _logger.LogInformation("[CRMINBOX].[AppendAgentMessageAsync].[DATABASE] GUARDADO | Mensaje insertado con ID Local: {Id} | ExtId: {ExtId}", msg.Id, externalId);                
 
                 NotifyChanged();
                 return msg;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[CRM] EXCEPCIÓN CRÍTICA: {ex.Message}");
+                _logger.LogError(ex, "[CRMINBOX].[AppendAgentMessageAsync] EXCEPCIÓN CRÍTICA | Thread: {ThreadId} | Error: {Message}", threadId, ex.Message);
+                
                 if (ex.InnerException != null) Console.WriteLine($"[CRM] Inner Exception: {ex.InnerException.Message}");
                 return null;
             }
@@ -600,6 +606,8 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
 
                 var endpoint = $"{apiUrl}/settings/set/{instance}";
 
+                _logger.LogInformation("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[GarantizarConfiguracionFijaAsync] POST | Inicio de configuración fija para instancia: {Instance}", instance);
+
                 _httpClient.DefaultRequestHeaders.Clear();
                 _httpClient.DefaultRequestHeaders.Add("apikey", apiKey);
 
@@ -618,15 +626,18 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
 
                 if (response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[Evolution] Configuración de '{instance}' sincronizada.");
+                    _logger.LogInformation("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[GarantizarConfiguracionFijaAsync] ÉXITO | Configuración de '{Instance}' sincronizada correctamente.", instance);                    
                     return true;
                 }
+
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[GarantizarConfiguracionFijaAsync] ERROR | No se pudo sincronizar configuración. Status: {Status} | Detalle: {Error}", response.StatusCode, errorBody);
 
                 return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Evolution] Excepción: {ex.Message}");
+                _logger.LogError(ex, "[WEBHOOKAPI].[CRMINBOXREPOSITORY].[GarantizarConfiguracionFijaAsync] EXCEPCIÓN CRÍTICA | Fallo al intentar conectar con Evolution API.");                
                 return false;
             }
         }
@@ -641,10 +652,13 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                 var instance = _cfg["Evolution:InstanceName"];
                 var webhookUrl = _cfg["Evolution:WebhookUrl"]; // <--- Leído desde settings
 
+                // LOG DE INTENTO                
+                _logger.LogInformation("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[ConfigurarWebhooksAsync] POST | Intentando registrar Webhook. URL: {WebhookUrl} | Instancia: {Instance}", webhookUrl, instance);
+
                 if (string.IsNullOrEmpty(webhookUrl))
                 {
-                    Console.WriteLine("[Evolution Webhook] Error: No se ha configurado 'WebhookUrl' en los settings.");
-                    return false;
+                    _logger.LogWarning("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[ConfigurarWebhooksAsync] ADVERTENCIA | 'WebhookUrl' no configurada en los settings. Abortando registro.");                    
+                    return false;                    
                 }
 
                 // 2. Endpoint correcto para Webhooks
@@ -678,18 +692,18 @@ namespace Crm.Webhook.Core.Data.Repositories.EvolutionWebHook
                 var response = await _httpClient.PostAsJsonAsync(endpoint, payload);
 
                 if (response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine($"[Evolution Webhook] Eventos vinculados a: {webhookUrl}");
+                {                    
+                    _logger.LogInformation("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[ConfigurarWebhooksAsync] ÉXITO | Webhook vinculado correctamente a: {WebhookUrl}", webhookUrl);                    
                     return true;
                 }
 
-                var error = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"[Evolution Webhook] Error: {error}");
+                var error = await response.Content.ReadAsStringAsync();                
+                _logger.LogError("[WEBHOOKAPI].[CRMINBOXREPOSITORY].[ConfigurarWebhooksAsync] ERROR | Fallo en Evolution API. Detalle: {Error}", error);                
                 return false;
             }
             catch (Exception ex)
-            {
-                Console.WriteLine($"[Evolution Webhook] Excepción: {ex.Message}");
+            {   
+                _logger.LogCritical(ex, "[WEBHOOKAPI].[CRMINBOXREPOSITORY].[ConfigurarWebhooksAsync] EXCEPCIÓN CRÍTICA | Fallo catastrófico al configurar Webhooks.");                
                 return false;
             }
         }

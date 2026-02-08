@@ -92,30 +92,28 @@ using (var scope = app.Services.CreateScope())
     {
         var repo = scope.ServiceProvider.GetRequiredService<CrmInboxRepository>();
         _ = Task.Run(async () => {
-            await Task.Delay(5000); // Dale un poco más de tiempo en el VPS
+            try
+            {
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] INFO | Esperando 5s para estabilización de red en VPS...");
+                await Task.Delay(5000); // Dale un poco más de tiempo en el VPS
 
-            // rejectCall = true, msgCall = "No se aceptan llamadas por este medio, por favor escriba.", groupsIgnore = true,
-            //alwaysOnline = false, readMessages = false, // Visto manual habilitado readStatus = false,syncFullHistory = true
-            await repo.GarantizarConfiguracionFijaAsync();
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] PROCESO | Iniciando GarantizarConfiguracionFijaAsync...");
+                await repo.GarantizarConfiguracionFijaAsync();
 
-            //events = new[] {
-            //"APPLICATION_STARTUP", "QRCODE_UPDATED", "MESSAGES_SET", "MESSAGES_UPSERT",
-            //                "MESSAGES_UPDATE", "MESSAGES_DELETE", "SEND_MESSAGE", "CONTACTS_SET",
-            //                "CONTACTS_UPSERT", "CONTACTS_UPDATE", "PRESENCE_UPDATE", "CHATS_SET",
-            //                "CHATS_UPSERT", "CHATS_UPDATE", "CHATS_DELETE", "GROUPS_UPSERT",
-            //                "GROUP_UPDATE", "GROUP_PARTICIPANTS_UPDATE", "CONNECTION_UPDATE",
-            //                "LABELS_EDIT", "LABELS_ASSOCIATION", "CALL", "TYPEBOT_START",
-            //                "TYPEBOT_CHANGE_STATUS", "LOGOUT_INSTANCE", "REMOVE_INSTANCE"
-            // Evolution:WebhookUrl => https://98352ea10278.ngrok-free.app/api/webhook/evolution
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] PROCESO | Iniciando ConfigurarWebhooksAsync...");
+                await repo.ConfigurarWebhooksAsync();
 
-            await repo.ConfigurarWebhooksAsync();
-
-            Console.WriteLine("[Startup] Microservicio sincronizado con Evolution API.");
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] ÉXITO | Microservicio sincronizado con Evolution API.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "[WEBHOOKAPI].[PROGRAM].[Startup] EXCEPCIÓN CRÍTICA | Falló el hilo de configuración automática.");
+            }
         });
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[Startup] Error: {ex.Message}");
+        Log.Error(ex, "[WEBHOOKAPI].[PROGRAM].[Startup] ERROR | No se pudo inicializar el Scope de configuración.");        
     }
 }
 
@@ -132,5 +130,21 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<CrmHub>("/crmHub"); // SignalR
+
+// --- BLOQUE DE AUDITORÍA ---
+var config = app.Configuration;
+var webhookUrl = config["Evolution:WebhookUrl"];
+// Limpiamos la cadena de conexión para el log (sin passwords)
+var dbLogInfo = connectionString?.Split(';').FirstOrDefault(x => x.StartsWith("Server") || x.StartsWith("Data Source"));
+
+var provider = (config as IConfigurationRoot)?.Providers
+    .LastOrDefault(p => p.TryGet("Evolution:WebhookUrl", out _));
+
+Log.Information("----------------------------------------------------------------------------");
+Log.Information("[WEBHOOKAPI].[PROGRAM].[Auditoria] SISTEMA INICIADO | WEBHOOK API CHAPULTEPEC");
+Log.Information("[WEBHOOKAPI].[PROGRAM].[Auditoria] URL Webhook: {Url}", webhookUrl ?? "No definida");
+Log.Information("[WEBHOOKAPI].[PROGRAM].[Auditoria] Origen Config: {Source}", provider?.ToString() ?? "Desconocido");
+Log.Information("[WEBHOOKAPI].[PROGRAM].[Auditoria] Database Host: {Db}", dbLogInfo ?? "No disponible");
+Log.Information("----------------------------------------------------------------------------");
 
 app.Run();
