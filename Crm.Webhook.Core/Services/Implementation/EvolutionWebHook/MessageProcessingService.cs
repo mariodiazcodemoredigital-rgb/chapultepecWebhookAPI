@@ -33,8 +33,9 @@ namespace Crm.Webhook.Core.Services.Implementation.EvolutionWebHook
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            _log.LogInformation("🚀 Worker activo procesando cola de mensajes...");
+        {            
+            // Inicio del Worker
+            _log.LogInformation("[WEBHOOKAPI].[MESSAGEPROCESSINGSERVICE].[ExecuteAsync] INFO | 🚀 Worker activo procesando cola de mensajes...");
 
             await foreach (var msg in _queue.Reader.ReadAllAsync(stoppingToken))
             {
@@ -51,19 +52,23 @@ namespace Crm.Webhook.Core.Services.Implementation.EvolutionWebHook
                     var snap = parser.BuildSnapshot(msg.RawPayload);
                     if (snap == null)
                     {
-                        _log.LogWarning("⚠️ No se pudo generar el snapshot para un mensaje. Thread: {threadId}", msg.threadId);
+                        _log.LogWarning("[WEBHOOKAPI].[MESSAGEPROCESSINGSERVICE].[ExecuteAsync] ADVERTENCIA | ⚠️ No se pudo generar el snapshot para un mensaje. Thread: {ThreadId}", msg.threadId);                        
                         continue;
                     }
 
                     // 2. Persistencia real
                     if (snap != null)
                     {
+                        _log.LogInformation("[WEBHOOKAPI].[MESSAGEPROCESSINGSERVICE].[ExecuteAsync] PROCESO | Procesando Snapshot");
+
                         await persistence.PersistSnapshotAsync(snap, stoppingToken);
+
+                        _log.LogInformation("[WEBHOOKAPI].[MESSAGEPROCESSINGSERVICE].[ExecuteAsync] ÉXITO | Snapshot persistido correctamente en DB.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, "❌ Error procesando mensaje en segundo plano");
+                    _log.LogError(ex, "[WEBHOOKAPI].[MESSAGEPROCESSINGSERVICE].[ExecuteAsync] EXCEPCIÓN CRÍTICA | Error procesando mensaje en segundo plano. Thread: {ThreadId}", msg.threadId);                    
                 }
             }
         }

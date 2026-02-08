@@ -94,7 +94,7 @@ using (var scope = app.Services.CreateScope())
         _ = Task.Run(async () => {
             try
             {
-                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] INFO | Esperando 5s para estabilización de red en VPS...");
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] INFO | Esperando 5s para estabilizacion de red en VPS...");
                 await Task.Delay(5000); // Dale un poco más de tiempo en el VPS
 
                 Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] PROCESO | Iniciando GarantizarConfiguracionFijaAsync...");
@@ -103,11 +103,11 @@ using (var scope = app.Services.CreateScope())
                 Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] PROCESO | Iniciando ConfigurarWebhooksAsync...");
                 await repo.ConfigurarWebhooksAsync();
 
-                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] ÉXITO | Microservicio sincronizado con Evolution API.");
+                Log.Information("[WEBHOOKAPI].[PROGRAM].[Startup] EXITO | Microservicio sincronizado con Evolution API.");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "[WEBHOOKAPI].[PROGRAM].[Startup] EXCEPCIÓN CRÍTICA | Falló el hilo de configuración automática.");
+                Log.Error(ex, "[WEBHOOKAPI].[PROGRAM].[Startup] EXCEPCIÓN CRÍTICA | Fallo el hilo de configuración automática.");
             }
         });
     }
