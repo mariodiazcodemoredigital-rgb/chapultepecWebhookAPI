@@ -53,6 +53,9 @@ namespace Crm.Webhook.Api.Controllers
         {
             var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
 
+            // PRUEBA DE FUEGO: Usar Serilog directamente
+            Serilog.Log.Information("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] TEST DIRECTO | IP: {RemoteIp}", remoteIp);
+
             // 1. LOG DE ENTRADA INICIAL
             _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] POST | 📩 Webhook recibido desde IP: {RemoteIp}", remoteIp);
 
