@@ -28,6 +28,9 @@ namespace Crm.Webhook.Core.Parsers
         {
             try
             {
+                // LOG DE INICIO DE MAPEO
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[MapEvolutionToEnvelope] PROCESO | Iniciando mapeo de JSON a Envelope.");
+
                 using var doc = JsonDocument.Parse(rawBody);
                 var root = doc.RootElement;
 
@@ -92,6 +95,9 @@ namespace Crm.Webhook.Core.Parsers
                                ? $"wa:{finalPhone}"
                                : $"wa:lid:{finalLid?.Replace("@lid", "")}";
 
+                // LOG DE ÉXITO CON DETALLES DE IDENTIDAD
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[MapEvolutionToEnvelope] ÉXITO | Mapeo completado. Thread: {ThreadId} | Remitente: {PushName}", threadId, pushName ?? "Desconocido");
+
                 return new IncomingEvolutionEnvelope
                 {
                     ThreadId = threadId,
@@ -111,7 +117,8 @@ namespace Crm.Webhook.Core.Parsers
             }
             catch (Exception ex)
             {
-                _log.LogWarning(ex, "Failed to map Evolution payload to Envelope");
+                // LOG DE ERROR
+                _log.LogError(ex, "[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[MapEvolutionToEnvelope] ERROR | Fallo al mapear el payload de Evolution. Posible cambio en el formato del JSON.");                
                 return null;
             }
         }
@@ -121,6 +128,8 @@ namespace Crm.Webhook.Core.Parsers
         {
             try
             {
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] PROCESO | Iniciando disección de Payload RAW que viene del BackGroundService.");
+
                 using var doc = JsonDocument.Parse(rawBody);
                 var root = doc.RootElement;
                 var data = root.TryGetProperty("data", out var d) ? d : root;
@@ -129,7 +138,10 @@ namespace Crm.Webhook.Core.Parsers
                 // Identidad base
                 // =========================
                 if (!root.TryGetProperty("instance", out var instProp))
+                {
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] ADVERTENCIA | No se encontró propiedad 'instance'.");
                     return null;
+                }
 
                 var instance = instProp.GetString()!;
                 var senderRoot = root.TryGetProperty("sender", out var s) ? s.GetString() : null;
@@ -142,9 +154,11 @@ namespace Crm.Webhook.Core.Parsers
                         msgNode.TryGetProperty("reactionMessage", out var reactNode))
                     {
                         key = reactNode.GetProperty("key"); // Esta es la key del mensaje original
+                        _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] INFO | Mensaje detectado como REACCIÓN.");
                     }
                     else
                     {
+                        _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] ADVERTENCIA | No se pudo determinar la KEY del mensaje.");
                         return null; // Si no hay key de ningún tipo, no es un mensaje procesable
                     }
                 }
@@ -255,6 +269,8 @@ namespace Crm.Webhook.Core.Parsers
                     ? $"wa:{finalPhone}"
                     : $"wa:lid:{finalLid?.Replace("@lid", "")}";
 
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] INFO | Identidad resuelta: {ThreadId} | FromMe: {FromMe}", threadId, fromMe);
+
                 // =========================
                 // timestamp (string o number)
                 // =========================
@@ -297,7 +313,7 @@ namespace Crm.Webhook.Core.Parsers
 
                 if (!data.TryGetProperty("message", out var message))
                 {
-                    _log.LogWarning("Payload without message node");
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] ADVERTENCIA | Payload sin nodo de mensaje.");                    
                     return null;
                 }
 
@@ -584,6 +600,11 @@ namespace Crm.Webhook.Core.Parsers
                 }
 
                 // =========================
+                // Retorno del Snapshot
+                // =========================
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] ÉXITO | Snapshot construido para MsgId: {ExtId}", externalMessageId);
+
+                // =========================
                 // Construcción del snapshot
                 // =========================
                 return new EvolutionMessageSnapshotDto
@@ -628,7 +649,7 @@ namespace Crm.Webhook.Core.Parsers
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "BuildSnapshot failed");
+                _log.LogError(ex, "[WEBHOOKAPI].[EVOLUTIONPARSER].[BuildSnapshot] ERROR | Falló la construcción del snapshot.");
                 return null;
             }
         }

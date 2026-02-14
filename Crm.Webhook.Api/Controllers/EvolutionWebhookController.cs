@@ -53,10 +53,13 @@ namespace Crm.Webhook.Api.Controllers
         {
             var remoteIp = HttpContext.Connection.RemoteIpAddress?.ToString();
 
+            // 1. LOG DE ENTRADA INICIAL
+            _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] POST | 📩 Webhook recibido desde IP: {RemoteIp}", remoteIp);
+
             // Verificación del Switch General
             if (!await toggle.IsEvolutionEnabledAsync(ct))
             {
-                _log.LogWarning("Evolution webhook recibido pero DESACTIVADO en la base de datos.");
+                _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER][IsEvolutionEnabledAsync].[Post] ADVERTENCIA | Webhook recibido pero DESACTIVADO en BD.");                
                 return Ok(new { status = "disabled" });
             }
 
@@ -66,7 +69,7 @@ namespace Crm.Webhook.Api.Controllers
                 
                 if (string.IsNullOrEmpty(remoteIp) || !_ipWhitelist.Contains(remoteIp))
                 {
-                    _log.LogWarning("Webhook rejected: IP {ip} not in whitelist", remoteIp);
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ERROR | IP {Ip} no está en lista blanca.", remoteIp);
                     return Unauthorized();
                 }
             }
@@ -83,7 +86,7 @@ namespace Crm.Webhook.Api.Controllers
                 if (!Request.Headers.TryGetValue("X-Webhook-Token", out var tokenHeader) ||
                     tokenHeader != _inboundToken)
                 {
-                    _log.LogWarning("Webhook rejected: invalid inbound token");
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ERROR | Token de entrada inválido.");                    
                     return Unauthorized();
                 }
             }
@@ -93,13 +96,13 @@ namespace Crm.Webhook.Api.Controllers
             {
                 if (!Request.Headers.TryGetValue("X-Signature", out var signatureHeader))
                 {
-                    _log.LogWarning("Webhook rejected: missing signature header");
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ERROR | Token de entrada inválido.");
                     return Unauthorized();
                 }
                 var computed = EvolutionParser.ComputeHmacSha256(_hmacSecret, body);
                 if (!EvolutionParser.FixedTimeEqualsHex(computed, signatureHeader))
                 {
-                    _log.LogWarning("Webhook rejected: invalid signature");
+                    _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ERROR | Token de entrada inválido.");                    
                     return Unauthorized();
                 }
             }
@@ -119,11 +122,15 @@ namespace Crm.Webhook.Api.Controllers
                 return Ok(new { status = "ignored_noise" });
             }
 
+            _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] PROCESO | Evento detectado: {Event}", eventType);
+
             // ============================================================
             // BLOQUE 1: PROCESAMIENTO DE STATUS (CHECKS)
             // ============================================================
             if (eventType == "messages.update" || eventType == "message-update.set")
             {
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] PROCESO | Actualizando status de mensaje...");
+
                 var data = root.GetProperty("data");
                 string? externalId = null;
 
@@ -167,17 +174,13 @@ namespace Crm.Webhook.Api.Controllers
                             {
                                 msg.Status = statusValue;
                                 await db.SaveChangesAsync(ct);
-                            }
-
-                            // Notificamos SIEMPRE con el status actual de la base de datos                          
-                            //await _hubContext.Clients.Group("ChapultepecEvo").SendAsync("MessageStatusUpdated", new
-                            //{
-                            //    ExternalId = externalId,
-                            //    Status = msg.Status
-                            //});
+                            }                           
                         }
                     }
                 }
+
+                // Solo añadimos un log al final del bloque si fue exitoso
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ÉXITO | Status de mensaje sincronizado.");
 
                 // Si el evento era SOLO un update de status, terminamos aquí para no crear duplicados
                 if (eventType != "messages.upsert") return Ok(new { status = "status_sync_ok" });
@@ -189,6 +192,8 @@ namespace Crm.Webhook.Api.Controllers
             {
                 try
                 {
+                    _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] PROCESO | Actualizando perfil de contacto...");
+
                     var dataElement = root.GetProperty("data");
                     JsonElement contact = (dataElement.ValueKind == JsonValueKind.Array && dataElement.GetArrayLength() > 0)
                                           ? dataElement[0] : dataElement;
@@ -234,22 +239,14 @@ namespace Crm.Webhook.Api.Controllers
                             if (huboCambios)
                             {
                                 await db.SaveChangesAsync(ct);
-
-                                // Notificamos a SignalR con el ThreadId REAL de la base de datos
-                                // para que Blazor lo encuentre en su lista de 'Threads'
-                                //await _hubContext.Clients.Group("ChapultepecEvo").SendAsync("ContactProfileUpdated", new
-                                //{
-                                //    remoteJid = thread.ThreadId,
-                                //    newName = pushName,
-                                //    newPhoto = profilePic
-                                //});
                             }
                         }
                     }
+                    _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ÉXITO | Perfil de contacto actualizado.");
                 }
                 catch (Exception ex)
                 {
-                    _log.LogError(ex, "Error en contacts.update manejando IDs mixtos");
+                    _log.LogError(ex, "[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ERROR | Fallo en contacts.update");                    
                 }
                 return Ok(new { status = "profile_processed" });
             }
@@ -257,17 +254,14 @@ namespace Crm.Webhook.Api.Controllers
             // Guardar RAW PAYLOAD (SIEMPRE) POR AUDITORIA
             var rawId = await _persistence.SaveRawPayloadAsync(body, remoteIp, ct);
 
-            _log.LogInformation(
-                "Evolution raw payload saved. Id={id}, Instance={instance}",
-                rawId,
-                Request.Headers["X-Instance"]);
+            _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] DATABASE | Raw Payload guardado. ID: {RawId}", rawId);
 
             // Paso Intermedio , mapear envelope
             var envelope = _parser.MapEvolutionToEnvelope(body);
 
             if (envelope == null)
             {
-                _log.LogWarning("Evolution payload inválido, guardando RAW sin thread");
+                _log.LogWarning("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ADVERTENCIA | Payload inválido, no se pudo crear envelope.");                
                 await _persistence.SaveRawEvolutionPayloadAsync(body, "unknown", ct);
                 return Ok(new { status = "accepted_raw" });
             }
@@ -276,21 +270,10 @@ namespace Crm.Webhook.Api.Controllers
             // simplemente lo ignoramos para no duplicar lo que el agente ya escribió.
             if (envelope.DirectionIn == false)
             {
-                _log.LogInformation("Webhook de mensaje saliente ignorado para evitar duplicados.");
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] INFO | Mensaje saliente ignorado para evitar duplicados.");                
                 return Ok(new { status = "ignored_outbound" });
             }
-
-            //var snapshot = _parser.BuildSnapshot(body);
-
-            //if (snapshot == null)
-            //{
-            //    _log.LogWarning("Could not build snapshot from evolution payload");
-            //    return Ok(new { status = "accepted_raw" });
-            //}
-
-            ////Persistir (GUARDA) la informacion del snapshot creada anteriormente y guardarla en las tablas de Thread y Messages
-            //await PersistSnapshotAsync(snapshot);
-
+                        
 
             // 5) Reutilizar el envelope ya mapeado anteriormente
             // No necesitamos llamar a MapEvolutionToIncoming()
@@ -317,15 +300,18 @@ namespace Crm.Webhook.Api.Controllers
                  RawPayload: body
             );
 
-            // 6) ACK rápido: contestar antes de processamento pesado
+            // 6) ENCOLAR
+            //    ACK rápido: contestar antes de processamento pesado
             //    Encolar procesamiento y retornar 200 Accepted (o 200 OK)
             try
             {
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] PROCESO | Encolando mensaje para: {ThreadId}", envelope.ThreadId);
                 await _queue.EnqueueAsync(incoming);
+                _log.LogInformation("[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] ÉXITO | Webhook aceptado y encolado correctamente.");
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "Failed to enqueue webhook message");
+                _log.LogError(ex, "[WEBHOOKAPI].[EVOLUTIONWEBHOOKCONTROLLER].[Post] EXCEPCIÓN CRÍTICA | Fallo al encolar mensaje.");                
                 // 500 for queue problems
                 return StatusCode(500, "enqueue_failed");
             }
@@ -333,9 +319,6 @@ namespace Crm.Webhook.Api.Controllers
             // Devolver 200 lo antes posible: Evolution espera status 200/2xx
             return Ok(new { status = "accepted" });
         }
-
-
-        
     }
     
 }

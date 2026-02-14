@@ -16,17 +16,15 @@ namespace Crm.Webhook.Core.Services.Hubs
         public Task SendToGroup(string group, string method, object payload)
             => Clients.Group(group).SendAsync(method, payload);
 
-        // Método para que el cliente se una a su grupo de negocio
-        public async Task JoinGroup(string businessAccountId)
-        {
-            if (!string.IsNullOrEmpty(businessAccountId))
-            {
-                await Groups.AddToGroupAsync(Context.ConnectionId, businessAccountId);
 
-                _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[JoinGroup] INFO | Cliente {ConnectionId} unido al grupo: {Group}",
-                    Context.ConnectionId, businessAccountId);
-            }
+        public async Task NotifyUpdate(string groupName, object data)
+        {
+            _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[NotifyUpdate] PROCESO | Orden de refresco enviada al grupo: {Group}", groupName);
+
+            // Esto asegura que TODOS los agentes suscritos al grupo reciban la orden de refrescar
+            await Clients.Group(groupName).SendAsync("NewMessage", data);
         }
+
 
         // Método para recibir mensajes enviados desde el CRM
         public async Task NewMessageSent(string groupName, object message)
@@ -38,22 +36,6 @@ namespace Crm.Webhook.Core.Services.Hubs
             await Clients.OthersInGroup(groupName).SendAsync("NewMessage", message);
         }
 
-        public async Task ChatAssigned(string groupName, object data)
-        {
-            _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[ChatAssigned] PROCESO | Notificando asignación de chat en grupo: {Group}", groupName);
-
-            // Reenvía la información a todos los demás en el grupo
-            await Clients.Group(groupName).SendAsync("ChatAssigned", data);
-        }
-
-        public async Task NotifyUpdate(string groupName, object data)
-        {
-            _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[NotifyUpdate] PROCESO | Orden de refresco enviada al grupo: {Group}", groupName);
-
-            // Esto asegura que TODOS los agentes suscritos al grupo reciban la orden de refrescar
-            await Clients.Group(groupName).SendAsync("NewMessage", data);
-        }
-
         // Para permitir notificaciones de edición entre agentes
         public async Task MessageUpdated(string groupName, object data)
         {
@@ -62,6 +44,25 @@ namespace Crm.Webhook.Core.Services.Hubs
             await Clients.OthersInGroup(groupName).SendAsync("MessageUpdated", data);
         }
 
+        // Método para que el cliente se una a su grupo de negocio
+        public async Task JoinGroup(string businessAccountId)
+        {
+            if (!string.IsNullOrEmpty(businessAccountId))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, businessAccountId);
+
+                _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[JoinGroup] INFO | Cliente {ConnectionId} unido al grupo: {Group}",
+                    Context.ConnectionId, businessAccountId);
+            }
+        }        
+
+        public async Task ChatAssigned(string groupName, object data)
+        {
+            _logger.LogInformation("[WEBHOOKAPI][CRM.WEBHOOK.CORE][SERVICES][HUBS][CRMHUB].[ChatAssigned] PROCESO | Notificando asignación de chat en grupo: {Group}", groupName);
+
+            // Reenvía la información a todos los demás en el grupo
+            await Clients.Group(groupName).SendAsync("ChatAssigned", data);
+        }
 
         // Métodos para saber cuando alguien se conecta/desconecta
         public override Task OnConnectedAsync()
