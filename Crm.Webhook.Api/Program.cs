@@ -13,6 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Captura la cadena de conexión
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+Serilog.Debugging.SelfLog.Enable(msg => Console.WriteLine($"[SERILOG ERROR] {msg}"));
+
 // 2. Configuración de Serilog con el Rolling File en la carpeta "Logs"
 // Esta es la carpeta que mapeamos en Easypanel hacia /root/logs_webhook
 Log.Logger = new LoggerConfiguration()
@@ -23,6 +25,7 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.File("Logs/webhook-audit-.txt",
         rollingInterval: RollingInterval.Day,
         buffered: false, // Desactiva el buffer para que escriba al instante
+        shared: true,
         flushToDiskInterval: TimeSpan.FromSeconds(1), // Fuerza el guardado cada segundo
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
