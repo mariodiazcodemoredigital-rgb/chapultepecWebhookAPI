@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Crm.Webhook.Api.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/crmInbox")]
     [ApiController]
     public class CrmInboxController : ControllerBase
     {
