@@ -6,6 +6,7 @@ using Crm.Webhook.Core.Services.Implementation.EvolutionWebHook;
 using Crm.Webhook.Core.Services.Interfaces.EvolutionWebHook;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,9 +17,13 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 // Esta es la carpeta que mapeamos en Easypanel hacia /root/logs_webhook
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Crm.Webhook", LogEventLevel.Information)
     .WriteTo.Console()
     .WriteTo.File("Logs/webhook-audit-.txt",
         rollingInterval: RollingInterval.Day,
+        buffered: false, // Desactiva el buffer para que escriba al instante
+        flushToDiskInterval: TimeSpan.FromSeconds(1), // Fuerza el guardado cada segundo
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
