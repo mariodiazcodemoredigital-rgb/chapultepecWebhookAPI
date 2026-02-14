@@ -17,8 +17,8 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 // Esta es la carpeta que mapeamos en Easypanel hacia /root/logs_webhook
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("Crm.Webhook", LogEventLevel.Information)
+   .MinimumLevel.Override("Microsoft", LogEventLevel.Warning) // Evita ruido de Microsoft
+   .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.File("Logs/webhook-audit-.txt",
         rollingInterval: RollingInterval.Day,
